@@ -758,6 +758,18 @@ async function saveKnowledge(
   });
 }
 
+function normalizeText(text) {
+
+  return (text || "")
+    .toLowerCase()
+    .replace(/[?!.。,，~]/g, "")
+    .replace(
+      /(은|는|이|가|을|를|에|의|도|만|님)$/g,
+      ""
+    )
+    .trim();
+}
+
 async function getKnowledgeContext(
   spreadsheetId,
   query
@@ -784,14 +796,15 @@ async function getKnowledgeContext(
     return "";
   }
 
+  // 정규화 적용
   const normalizedQuery =
-    query.toLowerCase();
+    normalizeText(query);
 
   const queryWords =
     normalizedQuery
       .split(/\s+/)
       .map((v) =>
-        v.trim()
+        normalizeText(v)
       )
       .filter(Boolean);
 
@@ -813,11 +826,15 @@ async function getKnowledgeContext(
         return null;
       }
 
+      // 정규화 적용
       const text =
-        `${keyword} ${answer}`.toLowerCase();
+        normalizeText(
+          `${keyword} ${answer}`
+        );
 
       let score = 0;
 
+      // 완전 포함
       if (
         text.includes(
           normalizedQuery
@@ -826,20 +843,22 @@ async function getKnowledgeContext(
         score += 10;
       }
 
+      // 키워드 포함
       if (
         normalizedQuery.includes(
-          keyword.toLowerCase()
+          normalizeText(
+            keyword
+          )
         )
       ) {
         score += 5;
       }
 
+      // 단어 매칭
       for (const word of queryWords) {
 
         if (
-          text.includes(
-            word
-          )
+          text.includes(word)
         ) {
           score += 1;
         }
@@ -859,6 +878,10 @@ async function getKnowledgeContext(
     .slice(0, 5);
 
   return scored
+    .filter(
+      (item) =>
+        item.score > 0
+    )
     .map(
       (item) =>
         `- ${item.keyword}: ${item.answer}`
