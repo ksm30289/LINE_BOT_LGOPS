@@ -57,6 +57,8 @@ async function handleEvent(event) {
 
   const replyText = completion.choices[0].message.content || "답변을 만들지 못했어요.";
 
+  console.log("GPT REPLY:", replyText);
+
   await client.replyMessage({
     replyToken: event.replyToken,
     messages: [
