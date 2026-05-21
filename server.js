@@ -22,7 +22,6 @@ const openai = new OpenAI({
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const JIRA_SHEET_NAME = process.env.JIRA_SHEET_NAME;
 const STATE_SHEET_NAME = "BOT_STATE";
-
 const ALERT_TARGET_ID = process.env.JIRA_ALERT_TARGET_ID;
 
 const JIRA_KEY_COLUMN = process.env.JIRA_KEY_COLUMN || "H";
@@ -30,10 +29,14 @@ const JIRA_TITLE_COLUMN = process.env.JIRA_TITLE_COLUMN || "E";
 const JIRA_STATUS_COLUMN = process.env.JIRA_STATUS_COLUMN || "J";
 const JIRA_LINK_COLUMN = process.env.JIRA_LINK_COLUMN || "H";
 const JIRA_TYPE_COLUMN = process.env.JIRA_TYPE_COLUMN || "A";
+const JIRA_ASSIGNEE_COLUMN = process.env.JIRA_ASSIGNEE_COLUMN || "I";
 
-const serviceAccount = JSON.parse(
-  process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-);
+const JIRA_ALLOWED_ASSIGNEES = (process.env.JIRA_ALLOWED_ASSIGNEES || "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
+
+const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 
 const auth = new google.auth.GoogleAuth({
   credentials: serviceAccount,
@@ -52,9 +55,7 @@ app.get("/", (req, res) => {
 app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
   try {
     const events = req.body.events;
-
     await Promise.all(events.map(handleEvent));
-
     res.status(200).end();
   } catch (err) {
     console.error("WEBHOOK ERROR:", err);
@@ -64,39 +65,22 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
 
 async function handleEvent(event) {
   try {
-    // 텍스트 메시지만 처리
-    if (event.type !== "message" || event.message.type !== "text") {
-      return;
-    }
+    if (event.type !== "message" || event.message.type !== "text") return;
 
-    // SOURCE 로그 출력
-    console.log(
-      "SOURCE:",
-      JSON.stringify(event.source)
-    );
+    console.log("SOURCE:", JSON.stringify(event.source));
 
     const userMessage = event.message.text;
-
     console.log("USER MESSAGE:", userMessage);
 
-    // "//" 명령어만 허용
     if (!userMessage.startsWith("//")) {
       console.log("IGNORED: Not command");
       return;
     }
 
-    const cleanMessage = userMessage
-      .replace("//", "")
-      .trim();
+    const cleanMessage = userMessage.replace("//", "").trim();
+    if (!cleanMessage) return;
 
-    if (!cleanMessage) {
-      return;
-    }
-
-    // 지라 수동 체크
     if (cleanMessage === "지라체크") {
-
-      // 특정 톡방만 허용
       if (
         event.source.type !== "group" ||
         event.source.groupId !== ALERT_TARGET_ID
@@ -106,50 +90,34 @@ async function handleEvent(event) {
       }
 
       await checkNewJiras(true);
-
-      await reply(
-        event.replyToken,
-        "JIRA 시트 수동 체크 완료"
-      );
-
+      await reply(event.replyToken, "JIRA 시트 수동 체크 완료");
       return;
     }
 
-    // GPT 응답
-    const completion =
-      await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "너는 게임 운영자를 돕는 친절한 LINE 챗봇이다. 짧고 명확하게 한국어로 답변한다.",
-          },
-          {
-            role: "user",
-            content: cleanMessage,
-          },
-        ],
-      });
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "너는 게임 운영자를 돕는 친절한 LINE 챗봇이다. 짧고 명확하게 한국어로 답변한다.",
+        },
+        {
+          role: "user",
+          content: cleanMessage,
+        },
+      ],
+    });
 
     const replyText =
-      completion.choices[0]?.message?.content ||
-      "답변을 생성하지 못했습니다.";
+      completion.choices[0]?.message?.content || "답변을 생성하지 못했습니다.";
 
     console.log("GPT REPLY:", replyText);
 
-    await reply(
-      event.replyToken,
-      replyText
-    );
-
+    await reply(event.replyToken, replyText);
     console.log("REPLY SENT");
-
   } catch (err) {
-    console.error(
-      "HANDLE EVENT ERROR:",
-      err
-    );
+    console.error("HANDLE EVENT ERROR:", err);
   }
 }
 
@@ -166,11 +134,8 @@ async function reply(replyToken, text) {
 }
 
 async function push(text) {
-
   if (!ALERT_TARGET_ID) {
-    console.log(
-      "JIRA_ALERT_TARGET_ID 없음"
-    );
+    console.log("JIRA_ALERT_TARGET_ID 없음");
     return;
   }
 
@@ -189,28 +154,20 @@ function colToIndex(col) {
   let index = 0;
 
   for (let i = 0; i < col.length; i++) {
-    index =
-      index * 26 +
-      col.charCodeAt(i) -
-      64;
+    index = index * 26 + col.charCodeAt(i) - 64;
   }
 
   return index - 1;
 }
 
 async function ensureStateSheet() {
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+  });
 
-  const spreadsheet =
-    await sheets.spreadsheets.get({
-      spreadsheetId: SHEET_ID,
-    });
-
-  const exists =
-    spreadsheet.data.sheets.some(
-      (s) =>
-        s.properties.title ===
-        STATE_SHEET_NAME
-    );
+  const exists = spreadsheet.data.sheets.some(
+    (s) => s.properties.title === STATE_SHEET_NAME
+  );
 
   if (exists) return;
 
@@ -240,129 +197,104 @@ async function ensureStateSheet() {
 }
 
 async function getSeenJiraKeys() {
-
   await ensureStateSheet();
 
-  const res =
-    await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `${STATE_SHEET_NAME}!A2:A`,
-    });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `${STATE_SHEET_NAME}!A2:A`,
+  });
 
-  return new Set(
-    (res.data.values || [])
-      .flat()
-      .filter(Boolean)
-  );
+  return new Set((res.data.values || []).flat().filter(Boolean));
 }
 
 async function saveSeenJiraKeys(keys) {
-
   if (!keys.length) return;
 
-  const now =
-    new Date().toISOString();
+  const now = new Date().toISOString();
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
     range: `${STATE_SHEET_NAME}!A:B`,
     valueInputOption: "RAW",
     requestBody: {
-      values: keys.map((key) => [
-        key,
-        now,
-      ]),
+      values: keys.map((key) => [key, now]),
     },
   });
 }
 
 async function getJiraRows() {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `${JIRA_SHEET_NAME}!A:J`,
+  });
 
-  const res =
-    await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `${JIRA_SHEET_NAME}!A:J`,
-    });
-
-  const rows =
-    res.data.values || [];
-
+  const rows = res.data.values || [];
   return rows.slice(1);
 }
 
 async function checkNewJiras(isManual = false) {
-
   try {
-
     console.log("JIRA CHECK START");
 
-    const seenKeys =
-      await getSeenJiraKeys();
+    const seenKeys = await getSeenJiraKeys();
+    const rows = await getJiraRows();
 
-    const rows =
-      await getJiraRows();
-
-    const keyIdx =
-      colToIndex(JIRA_KEY_COLUMN);
-
-    const titleIdx =
-      colToIndex(JIRA_TITLE_COLUMN);
-
-    const statusIdx =
-      colToIndex(JIRA_STATUS_COLUMN);
-
-    const linkIdx =
-      colToIndex(JIRA_LINK_COLUMN);
-
-    const typeIdx =
-      colToIndex(JIRA_TYPE_COLUMN);
+    const keyIdx = colToIndex(JIRA_KEY_COLUMN);
+    const titleIdx = colToIndex(JIRA_TITLE_COLUMN);
+    const statusIdx = colToIndex(JIRA_STATUS_COLUMN);
+    const linkIdx = colToIndex(JIRA_LINK_COLUMN);
+    const typeIdx = colToIndex(JIRA_TYPE_COLUMN);
+    const assigneeIdx = colToIndex(JIRA_ASSIGNEE_COLUMN);
 
     const newJiras = [];
 
     for (const row of rows) {
-
-      const key =
-        row[keyIdx]?.trim();
-
+      const key = row[keyIdx]?.trim();
       if (!key) continue;
 
-      if (!seenKeys.has(key)) {
+      const type = row[typeIdx]?.trim() || "-";
+      const title = row[titleIdx]?.trim() || "-";
+      const status = row[statusIdx]?.trim() || "-";
+      const link = row[linkIdx]?.trim() || "-";
+      const assignee = row[assigneeIdx]?.trim() || "-";
 
+      if (
+        JIRA_ALLOWED_ASSIGNEES.length > 0 &&
+        !JIRA_ALLOWED_ASSIGNEES.includes(assignee)
+      ) {
+        continue;
+      }
+
+      if (!seenKeys.has(key)) {
         newJiras.push({
           key,
-          type:
-            row[typeIdx] || "-",
-          title:
-            row[titleIdx] || "-",
-          status:
-            row[statusIdx] || "-",
-          link:
-            row[linkIdx] || "-",
+          type,
+          title,
+          status,
+          assignee,
+          link,
         });
       }
     }
 
     if (newJiras.length === 0) {
-
       console.log("신규 JIRA 없음");
-
       return;
     }
 
-    await saveSeenJiraKeys(
-      newJiras.map((j) => j.key)
-    );
+    await saveSeenJiraKeys(newJiras.map((j) => j.key));
 
     for (const jira of newJiras) {
-
-      const message =
-`[신규 JIRA 감지]
+      const message = `[신규 JIRA 감지]
 
 유형:
 ${jira.type}
 
 내용:
 ${jira.title}
+
+담당자:
+${jira.assignee}
 
 상태:
 ${jira.status}
@@ -372,42 +304,21 @@ ${jira.link}`;
 
       console.log(message);
 
-      if (!isManual) {
-        await push(message);
-      }
+      await push(message);
     }
 
-    if (isManual) {
-
-      await push(
-        `[수동 체크 완료]
-신규 JIRA ${newJiras.length}건 감지`
-      );
-    }
-
+    console.log(`신규 JIRA ${newJiras.length}건 알림 완료`);
   } catch (err) {
-
-    console.error(
-      "JIRA CHECK ERROR:",
-      err
-    );
+    console.error("JIRA CHECK ERROR:", err);
   }
 }
 
-// 1분마다 체크
 cron.schedule("* * * * *", async () => {
-
   await checkNewJiras(false);
-
 });
 
-const port =
-  process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
 app.listen(port, () => {
-
-  console.log(
-    `Server running on port ${port}`
-  );
-
+  console.log(`Server running on port ${port}`);
 });
