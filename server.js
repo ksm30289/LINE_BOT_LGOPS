@@ -39,6 +39,8 @@ async function handleEvent(event) {
 
   const userMessage = event.message.text;
 
+  console.log("USER MESSAGE:", userMessage);
+  
   const completion = await openai.chat.completions.create({
     model: "gpt-4.1-mini",
     messages: [
