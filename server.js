@@ -36,6 +36,17 @@ const JIRA_ALLOWED_ASSIGNEES = (process.env.JIRA_ALLOWED_ASSIGNEES || "")
   .map((name) => name.trim())
   .filter(Boolean);
 
+const KNOWLEDGE_SHEET_NAME =
+  process.env.KNOWLEDGE_SHEET_NAME || "BOT_KNOWLEDGE";
+
+const UNDECEMBER_CS_GROUP_ID = process.env.UNDECEMBER_CS_GROUP_ID;
+const FAIRYTAIL_CS_GROUP_ID = process.env.FAIRYTAIL_CS_GROUP_ID;
+
+const UNDECEMBER_KNOWLEDGE_SHEET_ID =
+  process.env.UNDECEMBER_KNOWLEDGE_SHEET_ID;
+const FAIRYTAIL_KNOWLEDGE_SHEET_ID =
+  process.env.FAIRYTAIL_KNOWLEDGE_SHEET_ID;
+
 const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 
 const auth = new google.auth.GoogleAuth({
@@ -80,6 +91,8 @@ async function handleEvent(event) {
     const cleanMessage = userMessage.replace("//", "").trim();
     if (!cleanMessage) return;
 
+    const knowledgeSheetId = getKnowledgeSheetIdBySource(event.source);
+
     if (cleanMessage === "지라체크") {
       if (
         event.source.type !== "group" ||
@@ -92,6 +105,37 @@ async function handleEvent(event) {
       await checkNewJiras(true);
       await reply(event.replyToken, "JIRA 시트 수동 체크 완료");
       return;
+    }
+
+    if (
+      cleanMessage.startsWith("학습 ") ||
+      cleanMessage.startsWith("기억 ")
+    ) {
+      if (!knowledgeSheetId) {
+        await reply(event.replyToken, "이 톡방은 학습 기능이 설정되지 않았어.");
+        return;
+      }
+
+      const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
+      const [keyword, answer] = learningText.split("|").map((v) => v?.trim());
+
+      if (!keyword || !answer) {
+        await reply(event.replyToken, "형식: //학습 키워드|답변");
+        return;
+      }
+
+      await saveKnowledge(knowledgeSheetId, keyword, answer);
+      await reply(event.replyToken, `학습 완료: ${keyword}`);
+      return;
+    }
+
+    if (knowledgeSheetId) {
+      const learnedAnswer = await findKnowledge(knowledgeSheetId, cleanMessage);
+
+      if (learnedAnswer) {
+        await reply(event.replyToken, learnedAnswer);
+        return;
+      }
     }
 
     const completion = await openai.chat.completions.create({
@@ -112,8 +156,6 @@ async function handleEvent(event) {
     const replyText =
       completion.choices[0]?.message?.content || "답변을 생성하지 못했습니다.";
 
-    console.log("GPT REPLY:", replyText);
-
     await reply(event.replyToken, replyText);
     console.log("REPLY SENT");
   } catch (err) {
@@ -121,15 +163,24 @@ async function handleEvent(event) {
   }
 }
 
+function getKnowledgeSheetIdBySource(source) {
+  if (source.type !== "group") return null;
+
+  if (source.groupId === UNDECEMBER_CS_GROUP_ID) {
+    return UNDECEMBER_KNOWLEDGE_SHEET_ID;
+  }
+
+  if (source.groupId === FAIRYTAIL_CS_GROUP_ID) {
+    return FAIRYTAIL_KNOWLEDGE_SHEET_ID;
+  }
+
+  return null;
+}
+
 async function reply(replyToken, text) {
   await client.replyMessage({
     replyToken,
-    messages: [
-      {
-        type: "text",
-        text: text.slice(0, 4900),
-      },
-    ],
+    messages: [{ type: "text", text: text.slice(0, 4900) }],
   });
 }
 
@@ -141,12 +192,7 @@ async function push(text) {
 
   await client.pushMessage({
     to: ALERT_TARGET_ID,
-    messages: [
-      {
-        type: "text",
-        text: text.slice(0, 4900),
-      },
-    ],
+    messages: [{ type: "text", text: text.slice(0, 4900) }],
   });
 }
 
@@ -174,15 +220,7 @@ async function ensureStateSheet() {
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
-      requests: [
-        {
-          addSheet: {
-            properties: {
-              title: STATE_SHEET_NAME,
-            },
-          },
-        },
-      ],
+      requests: [{ addSheet: { properties: { title: STATE_SHEET_NAME } } }],
     },
   });
 
@@ -210,14 +248,12 @@ async function getSeenJiraKeys() {
 async function saveSeenJiraKeys(keys) {
   if (!keys.length) return;
 
-  const now = new Date().toISOString();
-
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
     range: `${STATE_SHEET_NAME}!A:B`,
     valueInputOption: "RAW",
     requestBody: {
-      values: keys.map((key) => [key, now]),
+      values: keys.map((key) => [key, new Date().toISOString()]),
     },
   });
 }
@@ -232,7 +268,7 @@ async function getJiraRows() {
   return rows.slice(1);
 }
 
-async function checkNewJiras(isManual = false) {
+async function checkNewJiras() {
   try {
     console.log("JIRA CHECK START");
 
@@ -252,10 +288,6 @@ async function checkNewJiras(isManual = false) {
       const key = row[keyIdx]?.trim();
       if (!key) continue;
 
-      const type = row[typeIdx]?.trim() || "-";
-      const title = row[titleIdx]?.trim() || "-";
-      const status = row[statusIdx]?.trim() || "-";
-      const link = row[linkIdx]?.trim() || "-";
       const assignee = row[assigneeIdx]?.trim() || "-";
 
       if (
@@ -268,11 +300,11 @@ async function checkNewJiras(isManual = false) {
       if (!seenKeys.has(key)) {
         newJiras.push({
           key,
-          type,
-          title,
-          status,
+          type: row[typeIdx]?.trim() || "-",
+          title: row[titleIdx]?.trim() || "-",
+          status: row[statusIdx]?.trim() || "-",
           assignee,
-          link,
+          link: row[linkIdx]?.trim() || "-",
         });
       }
     }
@@ -293,8 +325,6 @@ ${jira.title}
 링크:
 ${jira.link}`;
 
-      console.log(message);
-
       await push(message);
     }
 
@@ -304,8 +334,79 @@ ${jira.link}`;
   }
 }
 
+async function ensureKnowledgeSheet(spreadsheetId) {
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+
+  const exists = spreadsheet.data.sheets.some(
+    (s) => s.properties.title === KNOWLEDGE_SHEET_NAME
+  );
+
+  if (exists) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        { addSheet: { properties: { title: KNOWLEDGE_SHEET_NAME } } },
+      ],
+    },
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${KNOWLEDGE_SHEET_NAME}!A1:C1`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [["KEYWORD", "ANSWER", "CREATED_AT"]],
+    },
+  });
+}
+
+async function saveKnowledge(spreadsheetId, keyword, answer) {
+  await ensureKnowledgeSheet(spreadsheetId);
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${KNOWLEDGE_SHEET_NAME}!A:C`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[keyword, answer, new Date().toISOString()]],
+    },
+  });
+}
+
+async function findKnowledge(spreadsheetId, query) {
+  await ensureKnowledgeSheet(spreadsheetId);
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${KNOWLEDGE_SHEET_NAME}!A2:B`,
+  });
+
+  const rows = res.data.values || [];
+  const normalizedQuery = query.toLowerCase();
+
+  for (const row of rows) {
+    const keyword = row[0]?.trim();
+    const answer = row[1]?.trim();
+
+    if (!keyword || !answer) continue;
+
+    const normalizedKeyword = keyword.toLowerCase();
+
+    if (
+      normalizedQuery.includes(normalizedKeyword) ||
+      normalizedKeyword.includes(normalizedQuery)
+    ) {
+      return answer;
+    }
+  }
+
+  return null;
+}
+
 cron.schedule("* * * * *", async () => {
-  await checkNewJiras(false);
+  await checkNewJiras();
 });
 
 const port = process.env.PORT || 3000;
