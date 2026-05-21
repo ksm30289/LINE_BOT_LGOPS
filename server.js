@@ -287,17 +287,8 @@ async function checkNewJiras(isManual = false) {
     for (const jira of newJiras) {
       const message = `[신규 JIRA 감지]
 
-유형:
-${jira.type}
-
 내용:
 ${jira.title}
-
-담당자:
-${jira.assignee}
-
-상태:
-${jira.status}
 
 링크:
 ${jira.link}`;
