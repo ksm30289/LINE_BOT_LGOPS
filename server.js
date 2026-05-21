@@ -745,9 +745,14 @@ async function checkDueReminders() {
   }
 }
 
+// 리마인드는 1분마다
 cron.schedule("* * * * *", async () => {
-  await checkNewJiras();
   await checkDueReminders();
+});
+
+// 지라는 1시간마다
+cron.schedule("0 * * * *", async () => {
+  await checkNewJiras();
 });
 
 const port = process.env.PORT || 3000;
