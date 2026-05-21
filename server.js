@@ -46,13 +46,13 @@ async function handleEvent(event) {
     console.log("USER MESSAGE:", userMessage);
 
     // "/" 명령어만 허용
-    if (!userMessage.startsWith("/")) {
+    if (!userMessage.startsWith("//")) {
       console.log("IGNORED: Not command");
       return;
     }
 
     // "/" 제거
-    const cleanMessage = userMessage.replace("/", "").trim();
+    const cleanMessage = userMessage.replace("//", "").trim();
 
     // 빈 명령 방지
     if (!cleanMessage) {
