@@ -45,6 +45,12 @@ const UNDECEMBER_CS_GROUP_ID =
 const FAIRYTAIL_CS_GROUP_ID =
   process.env.FAIRYTAIL_CS_GROUP_ID;
 
+const UNDECEMBER_QA_GROUP_ID = 
+  process.env.UNDECEMBER_QA_GROUP_ID;
+
+const UNDECEMBER_QA_KNOWLEDGE_SHEET_ID =
+  process.env.UNDECEMBER_QA_KNOWLEDGE_SHEET_ID;
+
 const UNDECEMBER_KNOWLEDGE_SHEET_ID =
   process.env.UNDECEMBER_KNOWLEDGE_SHEET_ID;
 
@@ -329,6 +335,7 @@ function getKnowledgeSheetIdBySource(
     return null;
   }
 
+  // 언디셈버 CS
   if (
     source.groupId ===
     UNDECEMBER_CS_GROUP_ID
@@ -336,11 +343,20 @@ function getKnowledgeSheetIdBySource(
     return UNDECEMBER_KNOWLEDGE_SHEET_ID;
   }
 
+  // 페어리테일퀘스트 CS
   if (
     source.groupId ===
     FAIRYTAIL_CS_GROUP_ID
   ) {
     return FAIRYTAIL_KNOWLEDGE_SHEET_ID;
+  }
+
+  // 언디셈버 QA
+  if (
+    source.groupId ===
+    UNDECEMBER_QA_GROUP_ID
+  ) {
+    return UNDECEMBER_QA_KNOWLEDGE_SHEET_ID;
   }
 
   return null;
