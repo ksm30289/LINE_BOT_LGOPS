@@ -102,7 +102,7 @@ async function handleEvent(event) {
         return;
       }
 
-      await checkNewJiras(true);
+      await checkNewJiras();
       await reply(event.replyToken, "JIRA 시트 수동 체크 완료");
       return;
     }
@@ -117,10 +117,27 @@ async function handleEvent(event) {
       }
 
       const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
-      const [keyword, answer] = learningText.split("|").map((v) => v?.trim());
+
+      let keyword;
+      let answer;
+
+      if (learningText.includes("|")) {
+        const parts = learningText.split("|").map((v) => v.trim());
+        keyword = parts[0];
+        answer = parts.slice(1).join("|").trim();
+      } else {
+        answer = learningText;
+        keyword = learningText
+          .split(/\s+/)[0]
+          .replace(/[은는이가을를,.!?]/g, "")
+          .trim();
+      }
 
       if (!keyword || !answer) {
-        await reply(event.replyToken, "형식: //학습 키워드|답변");
+        await reply(
+          event.replyToken,
+          "형식: //학습 키워드|답변 또는 //기억 답변내용"
+        );
         return;
       }
 
@@ -277,9 +294,7 @@ async function checkNewJiras() {
 
     const keyIdx = colToIndex(JIRA_KEY_COLUMN);
     const titleIdx = colToIndex(JIRA_TITLE_COLUMN);
-    const statusIdx = colToIndex(JIRA_STATUS_COLUMN);
     const linkIdx = colToIndex(JIRA_LINK_COLUMN);
-    const typeIdx = colToIndex(JIRA_TYPE_COLUMN);
     const assigneeIdx = colToIndex(JIRA_ASSIGNEE_COLUMN);
 
     const newJiras = [];
@@ -300,10 +315,7 @@ async function checkNewJiras() {
       if (!seenKeys.has(key)) {
         newJiras.push({
           key,
-          type: row[typeIdx]?.trim() || "-",
           title: row[titleIdx]?.trim() || "-",
-          status: row[statusIdx]?.trim() || "-",
-          assignee,
           link: row[linkIdx]?.trim() || "-",
         });
       }
