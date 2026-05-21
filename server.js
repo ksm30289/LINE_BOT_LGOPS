@@ -274,17 +274,22 @@ async function push(text) {
 }
 
 async function pushReminder(groupId, userId, message) {
-  await client.pushMessage({
-    to: groupId,
-    messages: [
-      {
-        type: "text",
-        text: `[리마인드]\n${message}`
-      },
-    ],
-  });
-} catch (err) {
-    console.error("MENTION PUSH ERROR:", err);
+  const mentionText = `@${userId} ${message}`;
+
+  const fallbackText = `[리마인드]\n${message}`;
+
+  try {
+    await client.pushMessage({
+      to: groupId,
+      messages: [
+        {
+          type: "text",
+          text: mentionText.slice(0, 4900),
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("REMINDER PUSH ERROR:", err);
 
     await client.pushMessage({
       to: groupId,
