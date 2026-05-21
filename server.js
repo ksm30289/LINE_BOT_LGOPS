@@ -20,13 +20,22 @@ const openai = new OpenAI({
 });
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+
 const JIRA_SHEET_NAME = process.env.JIRA_SHEET_NAME;
 const STATE_SHEET_NAME = "BOT_STATE";
-const ALERT_TARGET_ID = process.env.JIRA_ALERT_TARGET_ID;
 
-const JIRA_KEY_COLUMN = process.env.JIRA_KEY_COLUMN || "H";
-const JIRA_TITLE_COLUMN = process.env.JIRA_TITLE_COLUMN || "E";
-const JIRA_LINK_COLUMN = process.env.JIRA_LINK_COLUMN || "H";
+const ALERT_TARGET_ID =
+  process.env.JIRA_ALERT_TARGET_ID;
+
+const JIRA_KEY_COLUMN =
+  process.env.JIRA_KEY_COLUMN || "H";
+
+const JIRA_TITLE_COLUMN =
+  process.env.JIRA_TITLE_COLUMN || "E";
+
+const JIRA_LINK_COLUMN =
+  process.env.JIRA_LINK_COLUMN || "H";
+
 const JIRA_ASSIGNEE_COLUMN =
   process.env.JIRA_ASSIGNEE_COLUMN || "I";
 
@@ -37,25 +46,29 @@ const JIRA_ALLOWED_ASSIGNEES =
     .filter(Boolean);
 
 const KNOWLEDGE_SHEET_NAME =
-  process.env.KNOWLEDGE_SHEET_NAME || "BOT_KNOWLEDGE";
+  process.env.KNOWLEDGE_SHEET_NAME ||
+  "BOT_KNOWLEDGE";
 
+// 언디셈버 CS
 const UNDECEMBER_CS_GROUP_ID =
   process.env.UNDECEMBER_CS_GROUP_ID;
-
-const FAIRYTAIL_CS_GROUP_ID =
-  process.env.FAIRYTAIL_CS_GROUP_ID;
-
-const UNDECEMBER_QA_GROUP_ID = 
-  process.env.UNDECEMBER_QA_GROUP_ID;
-
-const UNDECEMBER_QA_KNOWLEDGE_SHEET_ID =
-  process.env.UNDECEMBER_QA_KNOWLEDGE_SHEET_ID;
 
 const UNDECEMBER_KNOWLEDGE_SHEET_ID =
   process.env.UNDECEMBER_KNOWLEDGE_SHEET_ID;
 
+// 페어리테일 CS
+const FAIRYTAIL_CS_GROUP_ID =
+  process.env.FAIRYTAIL_CS_GROUP_ID;
+
 const FAIRYTAIL_KNOWLEDGE_SHEET_ID =
   process.env.FAIRYTAIL_KNOWLEDGE_SHEET_ID;
+
+// 언디셈버 QA
+const UNDECEMBER_QA_GROUP_ID =
+  process.env.UNDECEMBER_QA_GROUP_ID;
+
+const UNDECEMBER_QA_KNOWLEDGE_SHEET_ID =
+  process.env.UNDECEMBER_QA_KNOWLEDGE_SHEET_ID;
 
 const serviceAccount = JSON.parse(
   process.env.GOOGLE_SERVICE_ACCOUNT_JSON
@@ -126,21 +139,26 @@ async function handleEvent(event) {
       userMessage
     );
 
+    // // 로 시작하지 않으면 무시
     if (
       !userMessage.startsWith("//")
     ) {
+
       console.log(
         "IGNORED: Not command"
       );
+
       return;
     }
 
     const cleanMessage =
       userMessage
-        .replace("//", "")
+        .replace(/^\/\//, "")
         .trim();
 
-    if (!cleanMessage) return;
+    if (!cleanMessage) {
+      return;
+    }
 
     const knowledgeSheetId =
       getKnowledgeSheetIdBySource(
@@ -175,7 +193,7 @@ async function handleEvent(event) {
       return;
     }
 
-    // 학습 / 기억
+    // 학습
     if (
       cleanMessage.startsWith(
         "학습 "
@@ -206,7 +224,7 @@ async function handleEvent(event) {
       let keyword;
       let answer;
 
-      // | 방식
+      // 키워드|답변
       if (
         learningText.includes("|")
       ) {
@@ -227,7 +245,7 @@ async function handleEvent(event) {
 
       } else {
 
-        // 자연어 방식
+        // 자연어 저장
         answer = learningText;
 
         keyword =
@@ -247,7 +265,7 @@ async function handleEvent(event) {
 
         await reply(
           event.replyToken,
-          "형식: //학습 키워드|답변 또는 //기억 답변내용"
+          "형식: //학습 키워드|답변"
         );
 
         return;
@@ -282,14 +300,18 @@ async function handleEvent(event) {
     const completion =
       await openai.chat.completions.create({
         model: "gpt-4.1-mini",
+
         messages: [
           {
             role: "system",
+
             content:
-              "너는 게임 운영자를 돕는 친절한 LINE 챗봇이다. 반드시 제공된 기억 내용을 우선 참고해서 답변한다. 기억에 없는 내용은 절대로 추측하지 말고 모른다고 답한다. 짧고 명확하게 한국어로 답변한다.",
+              "너는 게임 운영자를 돕는 친절한 LINE 챗봇이다. 반드시 제공된 기억 내용을 우선 참고해서 답변한다. 기억에 없는 내용은 추측하지 말고 모른다고 답한다. 짧고 명확하게 한국어로 답변한다.",
           },
+
           {
             role: "user",
+
             content:
               `저장된 기억:\n${knowledgeContext || "없음"}\n\n` +
               `사용자 질문:\n${cleanMessage}`,
@@ -300,7 +322,7 @@ async function handleEvent(event) {
     const replyText =
       completion.choices[0]
         ?.message?.content ||
-      "답변을 생성하지 못했습니다.";
+      "답변 생성 실패";
 
     console.log(
       "GPT REPLY:",
@@ -343,7 +365,7 @@ function getKnowledgeSheetIdBySource(
     return UNDECEMBER_KNOWLEDGE_SHEET_ID;
   }
 
-  // 페어리테일퀘스트 CS
+  // 페어리테일 CS
   if (
     source.groupId ===
     FAIRYTAIL_CS_GROUP_ID
@@ -369,9 +391,11 @@ async function reply(
 
   await client.replyMessage({
     replyToken,
+
     messages: [
       {
         type: "text",
+
         text: text.slice(
           0,
           4900
@@ -394,9 +418,11 @@ async function push(text) {
 
   await client.pushMessage({
     to: ALERT_TARGET_ID,
+
     messages: [
       {
         type: "text",
+
         text: text.slice(
           0,
           4900
@@ -440,7 +466,9 @@ async function ensureStateSheet() {
         STATE_SHEET_NAME
     );
 
-  if (exists) return;
+  if (exists) {
+    return;
+  }
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId:
@@ -505,7 +533,9 @@ async function saveSeenJiraKeys(
   keys
 ) {
 
-  if (!keys.length) return;
+  if (!keys.length) {
+    return;
+  }
 
   await sheets.spreadsheets.values.append({
     spreadsheetId:
@@ -586,7 +616,9 @@ async function checkNewJiras() {
       const key =
         row[keyIdx]?.trim();
 
-      if (!key) continue;
+      if (!key) {
+        continue;
+      }
 
       const assignee =
         row[
@@ -687,7 +719,9 @@ async function ensureKnowledgeSheet(
         KNOWLEDGE_SHEET_NAME
     );
 
-  if (exists) return;
+  if (exists) {
+    return;
+  }
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
@@ -796,7 +830,6 @@ async function getKnowledgeContext(
     return "";
   }
 
-  // 정규화 적용
   const normalizedQuery =
     normalizeText(query);
 
@@ -826,7 +859,6 @@ async function getKnowledgeContext(
         return null;
       }
 
-      // 정규화 적용
       const text =
         normalizeText(
           `${keyword} ${answer}`
@@ -834,7 +866,6 @@ async function getKnowledgeContext(
 
       let score = 0;
 
-      // 완전 포함
       if (
         text.includes(
           normalizedQuery
@@ -843,7 +874,6 @@ async function getKnowledgeContext(
         score += 10;
       }
 
-      // 키워드 포함
       if (
         normalizedQuery.includes(
           normalizeText(
@@ -854,7 +884,6 @@ async function getKnowledgeContext(
         score += 5;
       }
 
-      // 단어 매칭
       for (const word of queryWords) {
 
         if (
