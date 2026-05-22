@@ -585,6 +585,13 @@ function formatKst(date) {
 }
 
 function parseReminderCommand(cleanMessage) {
+  if (
+    cleanMessage.startsWith("학습 ") ||
+    cleanMessage.startsWith("기억 ")
+  ) {
+    return null;
+  }
+
   let text = cleanMessage.trim();
 
   if (text.startsWith("리마인드 ")) {
