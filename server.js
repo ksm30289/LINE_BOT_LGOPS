@@ -117,72 +117,72 @@ async function handleEvent(event) {
       return;
     }
 
-    const reminderData = parseReminderCommand(cleanMessage);
-
-    if (reminderData) {
-      if (!spreadsheetId) {
-        await reply(event.replyToken, "이 톡방은 리마인드 기능이 설정되지 않았어.");
-        return;
-      }
-
-      if (event.source.type !== "group" || !event.source.groupId) {
-        await reply(event.replyToken, "리마인드는 그룹 톡방에서만 등록할 수 있어.");
-        return;
-      }
-
-      if (!event.source.userId) {
-        await reply(event.replyToken, "요청자 정보를 확인할 수 없어 리마인드를 등록하지 못했어.");
-        return;
-      }
-
-      await saveReminder({
-        spreadsheetId,
-        groupId: event.source.groupId,
-        userId: event.source.userId,
-        remindAt: reminderData.remindAt,
-        message: reminderData.message,
-      });
-
-      await reply(
-        event.replyToken,
-        `[리마인드 등록 완료]\n${formatKst(reminderData.remindAt)}\n${reminderData.message}`
-      );
-
-      return;
-    }
-
     if (cleanMessage.startsWith("학습 ") || cleanMessage.startsWith("기억 ")) {
-      if (!spreadsheetId) {
-        await reply(event.replyToken, "이 톡방은 학습 기능이 설정되지 않았어.");
-        return;
-      }
+  if (!spreadsheetId) {
+    await reply(event.replyToken, "이 톡방은 학습 기능이 설정되지 않았어.");
+    return;
+  }
 
-      const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
+  const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
 
-      let keyword;
-      let answer;
+  let keyword;
+  let answer;
 
-      if (learningText.includes("|")) {
-        const parts = learningText.split("|").map((v) => v.trim());
-        keyword = parts[0];
-        answer = parts.slice(1).join("|").trim();
-      } else {
-        answer = learningText;
-        keyword = learningText
-          .split(/\s+/)[0]
-          .replace(/[은는이가을를,.!?]/g, "")
-          .trim();
-      }
+  if (learningText.includes("|")) {
+    const parts = learningText.split("|").map((v) => v.trim());
+    keyword = parts[0];
+    answer = parts.slice(1).join("|").trim();
+  } else {
+    answer = learningText;
+    keyword = learningText
+      .split(/\s+/)[0]
+      .replace(/[은는이가을를,.!?]/g, "")
+      .trim();
+  }
 
-      if (!keyword || !answer) {
-        await reply(event.replyToken, "형식: //학습 키워드|답변");
-        return;
-      }
+  if (!keyword || !answer) {
+    await reply(event.replyToken, "형식: //학습 키워드|답변");
+    return;
+  }
 
-      await saveKnowledge(spreadsheetId, keyword, answer);
-      await reply(event.replyToken, `학습 완료: ${keyword}`);
+  await saveKnowledge(spreadsheetId, keyword, answer);
+  await reply(event.replyToken, `학습 완료: ${keyword}`);
+  return;
+  }
+
+  const reminderData = parseReminderCommand(cleanMessage);
+
+  if (reminderData) {
+    if (!spreadsheetId) {
+      await reply(event.replyToken, "이 톡방은 리마인드 기능이 설정되지 않았어.");
       return;
     }
+
+    if (event.source.type !== "group" || !event.source.groupId) {
+      await reply(event.replyToken, "리마인드는 그룹 톡방에서만 등록할 수 있어.");
+      return;
+    }
+
+    if (!event.source.userId) {
+      await reply(event.replyToken, "요청자 정보를 확인할 수 없어 리마인드를 등록하지 못했어.");
+      return;
+    }
+
+    await saveReminder({
+      spreadsheetId,
+      groupId: event.source.groupId,
+      userId: event.source.userId,
+      remindAt: reminderData.remindAt,
+      message: reminderData.message,
+    });
+
+    await reply(
+      event.replyToken,
+      `[리마인드 등록 완료]\n${formatKst(reminderData.remindAt)}\n${reminderData.message}`
+    );
+  
+    return;
+  }
 
     let knowledgeContext = "";
 
