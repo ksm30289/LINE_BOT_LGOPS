@@ -626,8 +626,8 @@ function parseReminderCommand(cleanMessage) {
       remindAt.setHours(remindAt.getHours() + value);
     }
 
-    let message = text
-      .replace(relativeMatch[0], "")
+   let message = text
+      .replace(/\d+\s*(분|시간)\s*뒤\s*/, "")
       .replace(/^에\s*/, "")
       .replace(/^나한테\s*/, "")
       .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
