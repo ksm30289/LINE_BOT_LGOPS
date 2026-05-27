@@ -609,7 +609,7 @@ function parseReminderCommand(cleanMessage) {
     const value = Number(relativeMatch[1]);
     const unit = relativeMatch[2];
 
-    const remindAt = new Date(nowKst);
+    const remindAt = new Date();
 
     if (unit === "분") {
       remindAt.setMinutes(remindAt.getMinutes() + value);
