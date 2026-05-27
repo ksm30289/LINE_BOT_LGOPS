@@ -592,6 +592,15 @@ function parseReminderCommand(cleanMessage) {
     return null;
   }
 
+  const hasReminderKeyword =
+    cleanMessage.includes("리마인드") ||
+    cleanMessage.includes("알려줘") ||
+    cleanMessage.includes("알림");
+
+  if (!hasReminderKeyword) {
+    return null;
+  }
+
   let text = cleanMessage.trim();
 
   if (text.startsWith("리마인드 ")) {
