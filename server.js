@@ -598,60 +598,142 @@ function parseReminderCommand(cleanMessage) {
     text = text.replace(/^리마인드\s+/, "").trim();
   }
 
+  const nowKst = getKstNow();
+
+  // =========================
+  // 1. 상대시간 ("10분 뒤")
+  // =========================
+  const relativeMatch = text.match(/(\d+)\s*(분|시간)\s*뒤/);
+
+  if (relativeMatch) {
+    const value = Number(relativeMatch[1]);
+    const unit = relativeMatch[2];
+
+    const remindAt = new Date(nowKst);
+
+    if (unit === "분") {
+      remindAt.setMinutes(remindAt.getMinutes() + value);
+    } else if (unit === "시간") {
+      remindAt.setHours(remindAt.getHours() + value);
+    }
+
+    let message = text
+      .replace(relativeMatch[0], "")
+      .replace(/^에\s*/, "")
+      .replace(/^나한테\s*/, "")
+      .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
+      .trim();
+
+    if (!message) return null;
+
+    return {
+      remindAt,
+      message,
+    };
+  }
+
+  // =========================
+  // 2. 날짜+시간
+  // =========================
   const dateRegex =
     /(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일\s*(\d{1,2})(?::|시)\s*(\d{1,2})?/;
 
-  const match = text.match(dateRegex);
+  const dateMatch = text.match(dateRegex);
 
-  if (!match) return null;
+  if (dateMatch) {
+    let year = dateMatch[1]
+      ? Number(dateMatch[1])
+      : nowKst.getFullYear();
 
-  const nowKst = getKstNow();
+    const month = Number(dateMatch[2]);
+    const day = Number(dateMatch[3]);
+    const hour = Number(dateMatch[4]);
+    const minute = dateMatch[5]
+      ? Number(dateMatch[5])
+      : 0;
 
-  let year = match[1] ? Number(match[1]) : nowKst.getFullYear();
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = match[5] ? Number(match[5]) : 0;
+    let message = "";
 
-  let message = "";
+    if (text.includes("|")) {
+      message = text.split("|").slice(1).join("|").trim();
+    } else {
+      message = text.slice(dateMatch.index + dateMatch[0].length).trim();
 
-  if (text.includes("|")) {
-    message = text.split("|").slice(1).join("|").trim();
-  } else {
-    message = text.slice(match.index + match[0].length).trim();
+      message = message
+        .replace(/^에\s*/, "")
+        .replace(/^나한테\s*/, "")
+        .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
+        .trim();
+    }
+
+    if (!message) return null;
+
+    let remindAt = toKstDate(year, month, day, hour, minute);
+
+    if (!dateMatch[1]) {
+      const currentMonth = nowKst.getMonth() + 1;
+      const currentDay = nowKst.getDate();
+
+      if (
+        month < currentMonth ||
+        (month === currentMonth && day < currentDay)
+      ) {
+        year += 1;
+        remindAt = toKstDate(year, month, day, hour, minute);
+      }
+    }
+
+    return {
+      remindAt,
+      message,
+    };
+  }
+
+  // =========================
+  // 3. 시간만 ("14:30", "14시")
+  // =========================
+  const timeRegex =
+    /(\d{1,2})(?::|시)\s*(\d{1,2})?/;
+
+  const timeMatch = text.match(timeRegex);
+
+  if (timeMatch) {
+    const year = nowKst.getFullYear();
+    const month = nowKst.getMonth() + 1;
+    const day = nowKst.getDate();
+
+    const hour = Number(timeMatch[1]);
+    const minute = timeMatch[2]
+      ? Number(timeMatch[2])
+      : 0;
+
+    let remindAt = toKstDate(
+      year,
+      month,
+      day,
+      hour,
+      minute
+    );
+
+    let message = text
+      .slice(timeMatch.index + timeMatch[0].length)
+      .trim();
 
     message = message
       .replace(/^에\s*/, "")
       .replace(/^나한테\s*/, "")
       .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
       .trim();
+
+    if (!message) return null;
+
+    return {
+      remindAt,
+      message,
+    };
   }
 
-  if (!message) return null;
-
-  let remindAt = toKstDate(year, month, day, hour, minute);
-
-// 연도를 입력하지 않았을 때만 자동 보정
-if (!match[1]) {
-  const nowKst = getKstNow();
-
-  const currentMonth = nowKst.getMonth() + 1;
-  const currentDay = nowKst.getDate();
-
-  // 이미 지난 월/일이면 다음 해로 처리
-  if (
-    month < currentMonth ||
-    (month === currentMonth && day < currentDay)
-  ) {
-    year += 1;
-    remindAt = toKstDate(year, month, day, hour, minute);
-  }
-}
-
-  return {
-    remindAt,
-    message,
-  };
+  return null;
 }
 
 async function ensureReminderSheet(spreadsheetId) {
