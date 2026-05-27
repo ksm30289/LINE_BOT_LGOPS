@@ -631,10 +631,22 @@ function parseReminderCommand(cleanMessage) {
 
   let remindAt = toKstDate(year, month, day, hour, minute);
 
-  if (!match[1] && remindAt.getTime() < Date.now()) {
+// 연도를 입력하지 않았을 때만 자동 보정
+if (!match[1]) {
+  const nowKst = getKstNow();
+
+  const currentMonth = nowKst.getMonth() + 1;
+  const currentDay = nowKst.getDate();
+
+  // 이미 지난 월/일이면 다음 해로 처리
+  if (
+    month < currentMonth ||
+    (month === currentMonth && day < currentDay)
+  ) {
     year += 1;
     remindAt = toKstDate(year, month, day, hour, minute);
   }
+}
 
   return {
     remindAt,
