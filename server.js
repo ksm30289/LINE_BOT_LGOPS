@@ -153,7 +153,7 @@ async function handleEvent(event) {
       await reply(event.replyToken, `학습 완료: ${keyword}`);
       return;
     }
-
+    
     const reminderData = parseReminderCommand(cleanMessage);
 
     if (reminderData) {
@@ -678,6 +678,15 @@ function isKnowledgeQuestion(message) {
   return memoryKeywords.some((keyword) => text.includes(keyword));
 }
 
+function cleanReminderMessage(text) {
+  return text
+    .replace(/^에\s*/, "")
+    .replace(/^나한테\s*/, "")
+    .replace(/(라고\s*)?(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
+    .replace(/라고\s*$/g, "")
+    .trim();
+}
+
 function parseReminderCommand(cleanMessage) {
   if (
     cleanMessage.startsWith("학습 ") ||
@@ -708,26 +717,23 @@ function parseReminderCommand(cleanMessage) {
   // =========================
   // 1. 상대시간 ("10분 뒤")
   // =========================
-  const relativeMatch = text.match(/(\d+)\s*(분|시간)\s*뒤/);
+  const relativeMatch = text.match(
+  /(?:(\d+)\s*시간\s*)?(?:(\d+)\s*분\s*)?뒤/
+  );
 
-  if (relativeMatch) {
-    const value = Number(relativeMatch[1]);
-    const unit = relativeMatch[2];
+  if (relativeMatch && (relativeMatch[1] || relativeMatch[2])) {
+    const hours = relativeMatch[1] ? Number(relativeMatch[1]) : 0;
+    const minutes = relativeMatch[2] ? Number(relativeMatch[2]) : 0;
 
     const remindAt = new Date();
+    remindAt.setHours(remindAt.getHours() + hours);
+    remindAt.setMinutes(remindAt.getMinutes() + minutes);
 
-    if (unit === "분") {
-      remindAt.setMinutes(remindAt.getMinutes() + value);
-    } else if (unit === "시간") {
-      remindAt.setHours(remindAt.getHours() + value);
-    }
-
-   let message = text
-      .replace(/\d+\s*(분|시간)\s*뒤\s*/, "")
-      .replace(/^에\s*/, "")
-      .replace(/^나한테\s*/, "")
-      .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
+    let message = text
+      .replace(relativeMatch[0], "")
       .trim();
+
+    message = cleanReminderMessage(message);
 
     if (!message) return null;
 
@@ -760,17 +766,13 @@ function parseReminderCommand(cleanMessage) {
     let message = "";
 
     if (text.includes("|")) {
-      message = text.split("|").slice(1).join("|").trim();
+      message = cleanReminderMessage(text.split("|").slice(1).join("|").trim());
     } else {
       message = text.slice(dateMatch.index + dateMatch[0].length).trim();
 
-      message = message
-        .replace(/^에\s*/, "")
-        .replace(/^나한테\s*/, "")
-        .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
-        .trim();
+      message = cleanReminderMessage(message);
     }
-
+    
     if (!message) return null;
 
     let remindAt = toKstDate(year, month, day, hour, minute);
@@ -824,11 +826,7 @@ function parseReminderCommand(cleanMessage) {
       .slice(timeMatch.index + timeMatch[0].length)
       .trim();
 
-    message = message
-      .replace(/^에\s*/, "")
-      .replace(/^나한테\s*/, "")
-      .replace(/(하라고\s*)?(리마인드\s*해줘|알려줘|알림\s*해줘)\s*$/g, "")
-      .trim();
+    message = cleanReminderMessage(message);
 
     if (!message) return null;
 
