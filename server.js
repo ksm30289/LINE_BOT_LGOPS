@@ -103,6 +103,10 @@ async function handleEvent(event) {
 
     const spreadsheetId = getKnowledgeSheetIdBySource(event.source);
 
+    // =========================
+    // 1단계. 명령어 처리
+    // =========================
+
     if (cleanMessage === "지라체크") {
       if (
         event.source.type !== "group" ||
@@ -118,71 +122,75 @@ async function handleEvent(event) {
     }
 
     if (cleanMessage.startsWith("학습 ") || cleanMessage.startsWith("기억 ")) {
-  if (!spreadsheetId) {
-    await reply(event.replyToken, "이 톡방은 학습 기능이 설정되지 않았어.");
-    return;
-  }
+      if (!spreadsheetId) {
+        await reply(event.replyToken, "이 톡방은 학습 기능이 설정되지 않았어.");
+        return;
+      }
 
-  const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
+      const learningText = cleanMessage.replace(/^(학습|기억)\s+/, "").trim();
 
-  let keyword;
-  let answer;
+      let keyword;
+      let answer;
 
-  if (learningText.includes("|")) {
-    const parts = learningText.split("|").map((v) => v.trim());
-    keyword = parts[0];
-    answer = parts.slice(1).join("|").trim();
-  } else {
-    answer = learningText;
-    keyword = learningText
-      .split(/\s+/)[0]
-      .replace(/[은는이가을를,.!?]/g, "")
-      .trim();
-  }
+      if (learningText.includes("|")) {
+        const parts = learningText.split("|").map((v) => v.trim());
+        keyword = parts[0];
+        answer = parts.slice(1).join("|").trim();
+      } else {
+        answer = learningText;
+        keyword = learningText
+          .split(/\s+/)[0]
+          .replace(/[은는이가을를,.!?]/g, "")
+          .trim();
+      }
 
-  if (!keyword || !answer) {
-    await reply(event.replyToken, "형식: //학습 키워드|답변");
-    return;
-  }
+      if (!keyword || !answer) {
+        await reply(event.replyToken, "형식: //학습 키워드|답변");
+        return;
+      }
 
-  await saveKnowledge(spreadsheetId, keyword, answer);
-  await reply(event.replyToken, `학습 완료: ${keyword}`);
-  return;
-  }
-
-  const reminderData = parseReminderCommand(cleanMessage);
-
-  if (reminderData) {
-    if (!spreadsheetId) {
-      await reply(event.replyToken, "이 톡방은 리마인드 기능이 설정되지 않았어.");
+      await saveKnowledge(spreadsheetId, keyword, answer);
+      await reply(event.replyToken, `학습 완료: ${keyword}`);
       return;
     }
 
-    if (event.source.type !== "group" || !event.source.groupId) {
-      await reply(event.replyToken, "리마인드는 그룹 톡방에서만 등록할 수 있어.");
+    const reminderData = parseReminderCommand(cleanMessage);
+
+    if (reminderData) {
+      if (!spreadsheetId) {
+        await reply(event.replyToken, "이 톡방은 리마인드 기능이 설정되지 않았어.");
+        return;
+      }
+
+      if (event.source.type !== "group" || !event.source.groupId) {
+        await reply(event.replyToken, "리마인드는 그룹 톡방에서만 등록할 수 있어.");
+        return;
+      }
+
+      if (!event.source.userId) {
+        await reply(event.replyToken, "요청자 정보를 확인할 수 없어 리마인드를 등록하지 못했어.");
+        return;
+      }
+
+      await saveReminder({
+        spreadsheetId,
+        groupId: event.source.groupId,
+        userId: event.source.userId,
+        remindAt: reminderData.remindAt,
+        message: reminderData.message,
+      });
+
+      await reply(
+        event.replyToken,
+        `[리마인드 등록 완료]\n${formatKst(reminderData.remindAt)}\n${reminderData.message}`
+      );
+
       return;
     }
 
-    if (!event.source.userId) {
-      await reply(event.replyToken, "요청자 정보를 확인할 수 없어 리마인드를 등록하지 못했어.");
-      return;
-    }
-
-    await saveReminder({
-      spreadsheetId,
-      groupId: event.source.groupId,
-      userId: event.source.userId,
-      remindAt: reminderData.remindAt,
-      message: reminderData.message,
-    });
-
-    await reply(
-      event.replyToken,
-      `[리마인드 등록 완료]\n${formatKst(reminderData.remindAt)}\n${reminderData.message}`
-    );
-  
-    return;
-  }
+    // =========================
+    // 2단계. 기억형 질문 처리
+    // =========================
 
     let knowledgeContext = "";
 
@@ -190,24 +198,69 @@ async function handleEvent(event) {
       knowledgeContext = await getKnowledgeContext(spreadsheetId, cleanMessage);
     }
 
+    const isMemoryQuestion = isKnowledgeQuestion(cleanMessage);
+
+    let systemPrompt = "";
+    let userPrompt = "";
+
+    if (isMemoryQuestion) {
+      systemPrompt = `
+너는 게임 운영자를 돕는 친근한 LINE 챗봇이다.
+
+사용자의 질문이 공지, 보상, 일정, 점검, 기록, 설정, 이벤트 등
+저장된 기억을 참고해야 하는 질문이면 저장된 기억을 우선 참고한다.
+
+단, 저장된 기억에 정확한 내용이 없으면 단정하지 않는다.
+대신 "내가 저장해둔 내용에는 없네"처럼 부드럽게 말하고,
+확인이 필요한 위치를 짧게 안내한다.
+
+너무 딱딱하게 말하지 말고 자연스럽게 답변한다.
+답변은 1~3문장으로 짧게 한다.
+`.trim();
+
+      userPrompt =
+        `저장된 기억:\n${knowledgeContext || "없음"}\n\n` +
+        `사용자 질문:\n${cleanMessage}`;
+    }
+
+    // =========================
+    // 3단계. 일반 대화 처리
+    // =========================
+
+    else {
+      systemPrompt = `
+너는 게임 운영자를 돕는 친근한 LINE 챗봇이다.
+
+사용자의 말에 자연스럽게 대화하듯 답변한다.
+저장된 기억에만 의존하지 않는다.
+다만 실제 기록, 게임 내 처리 여부, 보상 지급 여부처럼
+확인이 필요한 사실은 단정하지 않는다.
+
+말투는 부드럽고 짧게 한다.
+답변은 1~3문장으로 한다.
+`.trim();
+
+      userPrompt =
+        `참고 가능한 저장 기억:\n${knowledgeContext || "없음"}\n\n` +
+        `사용자 말:\n${cleanMessage}`;
+    }
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
         {
           role: "system",
-          content:
-            "너는 게임 운영자를 돕는 친절한 LINE 챗봇이다. 반드시 제공된 기억 내용을 우선 참고해서 답변한다. 기억에 없는 내용은 추측하지 말고 모른다고 답한다. 짧고 명확하게 한국어로 답변한다.",
+          content: systemPrompt,
         },
         {
           role: "user",
-          content:
-            `저장된 기억:\n${knowledgeContext || "없음"}\n\n` +
-            `사용자 질문:\n${cleanMessage}`,
+          content: userPrompt,
         },
       ],
     });
 
-    const replyText = completion.choices[0]?.message?.content || "답변 생성 실패";
+    const replyText =
+      completion.choices[0]?.message?.content || "답변 생성 실패";
 
     console.log("GPT REPLY:", replyText);
 
@@ -584,6 +637,47 @@ function formatKst(date) {
   }).format(date);
 }
 
+function isKnowledgeQuestion(message) {
+  const text = normalizeText(message);
+
+  const memoryKeywords = [
+    "공지",
+    "보상",
+    "점검",
+    "이벤트",
+    "일정",
+    "기록",
+    "진행",
+    "처리",
+    "완료",
+    "지급",
+    "회수",
+    "설정",
+    "확률",
+    "상품",
+    "메일",
+    "쿠폰",
+    "다이아",
+    "패치",
+    "업데이트",
+    "버그",
+    "이슈",
+    "nid",
+    "jira",
+    "지라",
+    "다했",
+    "다한",
+    "끝났",
+    "끝난",
+    "했어",
+    "했나",
+    "했나요",
+    "확인",
+  ];
+
+  return memoryKeywords.some((keyword) => text.includes(keyword));
+}
+
 function parseReminderCommand(cleanMessage) {
   if (
     cleanMessage.startsWith("학습 ") ||
@@ -594,8 +688,10 @@ function parseReminderCommand(cleanMessage) {
 
   const hasReminderKeyword =
     cleanMessage.includes("리마인드") ||
-    cleanMessage.includes("알려줘") ||
-    cleanMessage.includes("알림");
+    cleanMessage.includes("알림 해줘") ||
+    /(\d+)\s*(분|시간)\s*뒤/.test(cleanMessage) ||
+    /\d{1,2}월\s*\d{1,2}일/.test(cleanMessage) ||
+    /\d{1,2}(?::|시)\s*\d{0,2}.*(알려줘|알림)/.test(cleanMessage);
 
   if (!hasReminderKeyword) {
     return null;
